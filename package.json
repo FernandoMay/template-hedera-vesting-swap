@@ -1,0 +1,25 @@
+{
+  "name": "scaffold-hbar-template-streamed-vesting",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Streamed vesting that pays out in HBAR without any off-chain bot, relayer, or scheduler, built on HIP-1215 and SaucerSwap V2.",
+  "license": "MIT",
+  "author": "Fernando May",
+  "engines": {
+    "node": ">=20.18.3"
+  },
+  "workspaces": [
+    "packages/contracts",
+    "packages/web"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace packages/contracts && npm run build --workspace packages/web",
+    "lint": "npm run lint --workspace packages/contracts && npm run lint --workspace packages/web",
+    "test": "npm run test --workspace packages/contracts",
+    "compile": "npm run compile --workspace packages/contracts",
+    "dev": "npm run dev --workspace packages/web",
+    "clean": "npm run clean --workspace packages/contracts && npm run clean --workspace packages/web",
+    "deploy:testnet": "npm run deploy:testnet --workspace packages/contracts",
+    "deploy:mainnet": "npm run deploy:mainnet --workspace packages/contracts"
+  }
+}

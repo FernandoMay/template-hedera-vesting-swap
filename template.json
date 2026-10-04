@@ -1,0 +1,170 @@
+{
+  "name": "streamed-vesting-hbar",
+  "description": "On-chain vesting that unlocks itself with HIP-1215 scheduled contract calls and settles every claim in native HBAR through the SaucerSwap V2 router. No bot, no relayer, no cron.",
+  "version": "1.0.0",
+  "create-scaffold-hbar": {
+    "rename": {
+      "@scaffold-hbar/streamed-vesting-contracts": {
+        "to": "@{{projectName}}/contracts",
+        "paths": ["packages"]
+      },
+      "@scaffold-hbar/streamed-vesting-web": {
+        "to": "@{{projectName}}/web",
+        "paths": ["packages"]
+      }
+    },
+    "instructions": [
+      "+This template streams an HTS grant token to a beneficiary and pays out in native HBAR.",
+      "Unlocks are scheduled on chain with HIP-1215, so there is no bot or relayer to run.",
+      "",
+      "Next steps:",
+      "+1. Fill in the operator credentials in .env, using values from the Hedera portal.",
+      "+2. Compile and run the contract suite:  {pm} run compile && {pm} test",
+      "+3. Deploy to testnet:                  {pm} run deploy:testnet",
+      "   The script prints the contract ID when it finishes.",
+      "+4. Copy the printed NEXT_PUBLIC_* lines into .env, then start the dashboard:",
+      "   {pm} run dev",
+      "",
+      "The grant token must have a SaucerSwap V2 pool against WHBAR at the fee tier you",
+      "configure. Hedera testnet defaults to SAUCE, which has one at the 0.30% tier."
+    ],
+    "requirements": {
+      "node": ">=20.18.3"
+    },
+    "envVars": [
+      {
+        "key": "HEDERA_ACCOUNT_ID",
+        "description": "Hedera account that signs the deployment, in 0.0.<num> form."
+      },
+      {
+        "key": "HEDERA_PRIVATE_KEY",
+        "description": "Hex-encoded private key of the account above, without the 0x prefix."
+      },
+      {
+        "key": "HEDERA_ACCOUNT_KEY_TYPE",
+        "description": "Key constructor to use: ED25519 or ECDSA. Defaults to ED25519."
+      },
+      {
+        "key": "HEDERA_NETWORK",
+        "description": "testnet, previewnet, or mainnet. Defaults to testnet."
+      },
+      {
+        "key": "HEDERA_GRANT_TOKEN_ID",
+        "description": "Token to stream, in 0.0.<num> form. Must have a SaucerSwap V2 pool against WHBAR."
+      },
+      {
+        "key": "HEDERA_CREATE_GRANT_TOKEN",
+        "description": "Set to true to create a new grant token with the SDK instead of streaming an existing one. The new token has no pool until you seed one."
+      },
+      {
+        "key": "VESTING_BENEFICIARY_ID",
+        "description": "Account that receives HBAR as tokens vest, in 0.0.<num> form."
+      },
+      {
+        "key": "VESTING_TOTAL_UNITS",
+        "description": "Total grant in the token's smallest unit. Defaults to 1000000000000."
+      },
+      {
+        "key": "VESTING_CLIFF_SECONDS",
+        "description": "Seconds from deployment until the first unlock. Defaults to 86400."
+      },
+      {
+        "key": "VESTING_RELEASE_INTERVAL_SECONDS",
+        "description": "Seconds between unlocks after the cliff. Defaults to 86400."
+      },
+      {
+        "key": "VESTING_RELEASE_COUNT",
+        "description": "Number of unlocks, at least one. Defaults to 5."
+      },
+      {
+        "key": "VESTING_POOL_FEE",
+        "description": "SaucerSwap V2 pool fee tier for the route, e.g. 3000 for 0.30%."
+      },
+      {
+        "key": "VESTING_MAX_SLIPPAGE_BPS",
+        "description": "Slippage tolerated between quote and swap, in basis points. Under 10000."
+      },
+      {
+        "key": "NEXT_PUBLIC_HEDERA_NETWORK",
+        "description": "Network the dashboard reads from the Mirror Node. Defaults to testnet."
+      },
+      {
+        "key": "NEXT_PUBLIC_VESTING_CONTRACT_ID",
+        "description": "Deployed StreamedVesting contract, in 0.0.<num> form."
+      }
+    ],
+    "capabilities": {
+      "frontend": ["nextjs-app"],
+      "solidityFramework": ["hardhat"],
+      "packageManager": ["npm"]
+    },
+    "defaults": {
+      "frontend": "nextjs-app",
+      "solidityFramework": "hardhat",
+      "packageManager": "npm"
+    },
+    "outro": {
+      "sections": [
+        {
+          "title": "Next steps",
+          "steps": [
+            {
+              "label": "1. Fill in .env with your operator credentials from the Hedera portal",
+              "text": "HEDERA_ACCOUNT_ID, HEDERA_PRIVATE_KEY and VESTING_BENEFICIARY_ID are the only required values."
+            },
+            {
+              "label": "2. Verify the contract suite before deploying anything",
+              "command": "{run:test}"
+            },
+            {
+              "label": "3. Compile the contracts",
+              "command": "{run:compile}"
+            },
+            {
+              "label": "4. Deploy to Hedera testnet",
+              "command": "{run:deploy:testnet}"
+            },
+            {
+              "label": "5. Copy the printed NEXT_PUBLIC_* lines into .env, then start the dashboard",
+              "command": "{run:dev}"
+            }
+          ]
+        },
+        {
+          "title": "How this template works",
+          "steps": [
+            {
+              "label": "HIP-1215 removes the bot",
+              "text": "At grant time the contract calls the Hedera Schedule Service (0x16b) once per release, asking it to call executeClaim at a future consensus second. When that second arrives the network performs the call. There is no off-chain component to keep running, and a release the network refuses is reported rather than reverted, so executeClaim stays permissionless and the stream still settles."
+            },
+            {
+              "label": "The SaucerSwap swap is mandatory",
+              "text": "Every claim converts the vested grant token into WHBAR and unwraps it to native HBAR through the SaucerSwap V2 router. The beneficiary cannot end up holding the grant token, and the swap carries a quoted floor so a claim cannot fill below the agreed price. Removing the swap removes the product. That also means the grant token must have a live SaucerSwap V2 pool against WHBAR at the configured fee tier, or every claim reverts."
+            },
+            {
+              "label": "Hedera gotchas this template already handles",
+              "text": "Hedera system contract calls never revert: they return an int64 ResponseCodeEnum ordinal where 22 is SUCCESS, so every one is checked as a value. The Schedule Service is 0x16b and HTS is 0x167, which are routinely misquoted for each other. The router pulls its input with transferFrom and exposes no ERC-20 approve, so the allowance is granted through HTS. And an HTS token cannot move to an unassociated account, so the deploy script associates the parties with the grant token first."
+            }
+          ]
+        },
+        {
+          "title": "Scripts and reference",
+          "steps": [
+            {
+              "label": "All package.json scripts",
+              "command": "{pm} run compile | {pm} test | {pm} lint | {pm} build | {pm} run dev | {pm} run clean | {pm} run deploy:testnet | {pm} run deploy:mainnet"
+            },
+            {
+              "label": "HIP-1215: Generalized Scheduled Contract Calls",
+              "url": "https://hips.hedera.com/hip/hip-1215"
+            },
+            {
+              "label": "SaucerSwap V2 contract deployments",
+              "url": "https://docs.saucerswap.finance/developers/contracts"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

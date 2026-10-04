@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Pinned local Node runtime used during development. Never committed.
+.tooling/
+
+# Secrets. Only .env.example is tracked.
+.env
+.env.local
+.env.*.local
+
+# Build output
+out/
+cache/
+artifacts/
+.next/
+coverage/
+typechain-types/
+
+# Logs and OS noise
+*.log
+npm-debug.log*
+.DS_Store

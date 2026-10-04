@@ -1,0 +1,30 @@
+{
+  "name": "@scaffold-hbar/streamed-vesting-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Next.js dashboard that reads streamed vesting schedules and claim history from the Hedera Mirror Node.",
+  "license": "MIT",
+  "author": "Fernando May",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "clean": "rm -rf .next"
+  },
+  "dependencies": {
+    "ethers": "^6.17.0",
+    "next": "^15.5.27",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "^15.5.27",
+    "typescript": "^5.7.2"
+  }
+}
