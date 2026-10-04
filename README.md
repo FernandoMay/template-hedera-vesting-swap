@@ -40,13 +40,13 @@ Two Hedera capabilities do the work, and neither is decorative:
 Scaffold it directly:
 
 ```bash
-npm create scaffold-hbar@latest --template <owner>/template-hedera-vesting-swap
+npm create scaffold-hbar@latest --template FernandoMay/template-hedera-vesting-swap
 ```
 
 Or clone this repository and run it locally:
 
 ```bash
-git clone <owner>/template-hedera-vesting-swap.git
+git clone FernandoMay/template-hedera-vesting-swap.git
 cd template-hedera-vesting-swap
 npm install
 npm run compile
