@@ -256,6 +256,39 @@ scales with payload size and the SDK's default ceiling of 2 HBAR is not enough f
 size — the node answers `INSUFFICIENT_TX_FEE` even on a well-funded account. Set
 `setMaxTransactionFee` explicitly; a higher ceiling only costs what is actually consumed.
 
+### What was measured, including what backfired
+
+These numbers come from compiling this repository, not from estimates.
+
+| Change | Creation code |
+| --- | --- |
+| As committed | 11,291 B |
+| `optimizer.runs: 1` instead of 200 | 11,291 B (no change) |
+| Settlement, route encoding and capacity search moved to an external library, `viaIR: true` | **7,771 B** |
+| Also moving the scheduling and cancellation loops, and making `VestingMath` public | 8,111 B (**worse**) |
+
+Two things worth knowing before you repeat this.
+
+**`viaIR` is required once you use external libraries.** Moving the swap settlement out overflows
+the legacy stack allocator in the `exactInput` call. `viaIR: true` fixes it and compiles to the
+same Shanghai instruction set.
+
+**Moving more logic to libraries is not automatically a win.** The second row above went *up* by
+340 bytes. A library call is a `DELEGATECALL`, so the caller pays to encode and decode every
+argument and return value. Returning a `struct[] memory` of scheduling outcomes cost the contract
+more in ABI marshalling than the loop it replaced cost in bytecode. Extraction pays off when the
+moved code is large and its interface is narrow; it backfires when the interface is wide.
+
+Two structural constraints make the extraction non-trivial, beyond the size itself:
+
+- An `internal` library function is compiled **into** the calling contract. Only a `public` one is
+  deployed separately and linked.
+- A delegatecall cannot read the caller's `immutable` variables, because immutables live in the
+  calling contract's code. Every configuration value has to be passed in as a parameter.
+- The custom errors must be redeclared in the library with identical names and parameter types.
+  The selector is the keccak of the signature, so a revert raised inside the library stays
+  indistinguishable from the same revert raised by the contract, and one error surface survives.
+
 ## Architecture
 
 ```
