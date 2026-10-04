@@ -15,6 +15,13 @@ Two Hedera capabilities do the work, and neither is decorative:
 > If you are looking for a generic recurring-payment example, this is not it. The interesting part
 > is that the payout asset is decided by a liquidity route the grantee cannot override.
 
+> **Known limitation: this contract does not deploy as written.** Its creation code is 11,291
+> bytes and Hedera caps every transaction at 6,144. `npm run deploy:testnet` detects this and
+> stops with the exact byte count instead of failing obscurely. Everything else — compile, the
+> 41-test suite, lint, the production build and the dashboard — passes. See
+> [The 6,144-byte transaction limit](#the-6144-byte-transaction-limit) for the three routes to a
+> deployable build and their traps.
+
 ---
 
 ## Contents
