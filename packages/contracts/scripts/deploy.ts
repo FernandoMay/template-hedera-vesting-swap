@@ -55,6 +55,26 @@ const RELEASE_GAS_LIMIT = 800_000n;
 /** Slippage tolerance between the SaucerSwap quote and the swap, in basis points. */
 const DEFAULT_SLIPPAGE_BPS = 300;
 
+/** Hedera's per-transaction byte limit, which also bounds inline initcode. */
+const MAX_INLINE_INITCODE_BYTES = 6_144;
+
+/** Concatenates two byte arrays into one fresh buffer. */
+function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
+/**
+ * Explicit fee ceiling for every transaction this script submits.
+ *
+ * The SDK default of 2 HBAR is below what Hedera charges for storing this contract's code,
+ * and the node rejects the transaction with `INSUFFICIENT_TX_FEE`. Paying a higher ceiling
+ * only costs what the transaction actually consumes.
+ */
+const MAX_TX_FEE_TINYBAR = hbar.Hbar.fromTinybars(50).toTinybars();
+
 /** Default stream shape used by a deploy run. */
 const DEFAULT_TOTAL_UNITS = 1_000_000_000_000n; // 10,000 tokens at 8 decimals
 const DEFAULT_CLIFF_SECONDS = 86_400n;
@@ -212,6 +232,40 @@ function loadCreationCode(): Uint8Array {
   return Uint8Array.from(Buffer.from(artifact.bytecode.replace(/^0x/, ""), "hex"));
 }
 
+/**
+ * Reads an account balance in tinybar from the Mirror Node.
+ *
+ * The Mirror Node serves this for free, which matters here: an account with no HBAR still
+ * needs to learn that it has no HBAR.
+ *
+ * @returns Balance in tinybar, or `null` when the node cannot answer, in which case the
+ *          caller should proceed rather than block a deploy on a read that failed.
+ */
+async function fetchOperatorBalanceTinybars(
+  mirrorNodeUrl: string,
+  account: hbar.AccountId,
+): Promise<bigint | null> {
+  try {
+    const response = await fetch(`${mirrorNodeUrl}/accounts/${account.toString()}`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      balance?: { balance?: number; tinybar?: string };
+    };
+    // The Mirror Node renamed this field: older responses carry `balance.tinybar` as a
+    // string, current ones carry `balance.balance` as a number. Accept both rather than
+    // defaulting a missing field to zero, which reads as "empty account" and sends the
+    // operator to the faucet for no reason.
+    const current = payload.balance?.balance;
+    if (typeof current === "number") return BigInt(current);
+    const legacy = payload.balance?.tinybar;
+    return typeof legacy === "string" ? BigInt(legacy) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Converts a hex string into the byte array shape the SDK expects. */
 function toBytes(hex: string): Uint8Array {
   return Uint8Array.from(Buffer.from(hex.replace(/^0x/, ""), "hex"));
@@ -359,26 +413,27 @@ async function main(): Promise<void> {
   // code, not just for executing it. Check the balance up front so an empty account fails
   // with an instruction instead of an `INSUFFICIENT_TX_FEE` receipt after the code has
   // already been uploaded to the File Service.
-  const operatorBalance = await client
-    .getAccountBalance(accountId)
-    .then((info) => BigInt(info.hbars.toTinybars()));
-  const deployCostHbar = 0.1;
+  //
+  // The Mirror Node answers this for free, so the check never fails for lack of HBAR itself.
+  const operatorBalance = await fetchOperatorBalanceTinybars(
+    network.mirrorNodeUrl,
+    accountId,
+  );
+  const operatorHbar = operatorBalance === null ? null : Number(operatorBalance) / 1e8;
   console.log(
-    `  operator balance  ${Number(operatorBalance) / 1e8} HBAR` +
+    `  operator balance  ${operatorHbar === null ? "unknown" : operatorHbar} HBAR` +
       (operatorBalance === 0n ? "  (EMPTY)" : ""),
   );
   if (operatorBalance === 0n) {
     throw new Error(
       "The operator account holds 0 HBAR, so this deploy cannot pay its fees. " +
         "Fund it from the testnet faucet at https://portal.hedera.com and run again. " +
-        "A deploy of this contract typically costs a few tenths of an HBAR, because Hedera " +
-        "charges for storing the ~11 KB of code as well as for executing it.",
+        "A deploy of this contract costs a few tenths of an HBAR, because Hedera charges " +
+        "for storing the ~11 KB of code as well as for executing it.",
     );
   }
-  if (Number(operatorBalance) / 1e8 < deployCostHbar) {
-    console.log(
-      `  WARNING: below ${deployCostHbar} HBAR. A deploy this size may run out of fees.`,
-    );
+  if (operatorHbar !== null && operatorHbar < 0.1) {
+    console.log("  WARNING: below 0.1 HBAR. A deploy this size may run out of fees.");
   }
 
   const iface = new Interface(STREAMED_VESTING_ABI as unknown as string[]);
@@ -477,16 +532,27 @@ async function main(): Promise<void> {
     );
 
     const creationCode = loadCreationCode();
-    console.log(
-      `  creation code ${creationCode.length} bytes. Hedera caps a single transaction at` +
-        " 6,144 bytes, so the code is published to the File Service and the contract is" +
-        " created from a FileId.",
-    );
+    const constructorArgsBytes = toBytes(constructorArgs);
+    const initcode = concatBytes(creationCode, constructorArgsBytes);
 
-    const deployTx = await new hbar.ContractCreateFlow()
+    // Hedera bounds a single transaction at transactionMaxBytes, which is 6,144 bytes, and
+    // the initcode travels inline for a ContractCreateTransaction. Failing here with the
+    // exact overflow is far better than letting the network answer TRANSACTION_OVERSIZE.
+    if (initcode.length > MAX_INLINE_INITCODE_BYTES) {
+      throw new Error(
+        `Initcode is ${initcode.length} bytes, over Hedera's ${MAX_INLINE_INITCODE_BYTES}-byte` +
+          " limit for an inline ContractCreateTransaction. Shrink the contract, or publish the" +
+          " initcode to the File Service and create the contract from the resulting FileId.",
+      );
+    }
+
+    console.log(`  initcode        ${initcode.length} bytes`);
+
+    const deployTx = await new hbar.ContractCreateTransaction()
       .setBytecode(creationCode)
-      .setConstructorParameters(toBytes(constructorArgs))
+      .setConstructorParameters(constructorArgsBytes)
       .setGas(3_000_000)
+      .setMaxTransactionFee(MAX_TX_FEE_TINYBAR)
       .execute(client);
 
     const deployReceipt = await deployTx.getReceipt(client);

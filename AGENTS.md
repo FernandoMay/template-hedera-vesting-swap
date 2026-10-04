@@ -119,6 +119,19 @@ the `catch`.
 **Hedera lacks some newer opcodes.** `_findAvailableSecond` deliberately avoids `block.prevrandao`
 so the contract does not depend on the Cancun opcode set. Keep it that way.
 
+**The contract is larger than Hedera's 6,144-byte transaction limit.** Its creation code is
+roughly 11 KB, so `npm run deploy:testnet` cannot use an inline `ContractCreateTransaction` and
+fails on purpose with the exact byte count. Do not "fix" this by raising a limit — there isn't one
+to raise. Shrink the contract below 6 KB, publish the initcode through the File Service, or use a
+HIP-1086 jumbo `EthereumTransaction`. README section "The 6,144-byte transaction limit" has the
+three routes and their traps. Whichever you pick, set `maxTransactionFee` explicitly: Hedera
+charges for storing code, and the SDK default is too low for a payload this size.
+
+**Never trust a Mirror Node field name you have not checked.** The account balance moved from
+`balance.tinybar` to `balance.balance` between API versions. A `?? 0` fallback turns "field
+missing" into "account is empty" and sends the operator to the faucet for nothing. Read both
+shapes and distinguish unknown from zero.
+
 ## Working on the dashboard
 
 The web app reads the **public Mirror Node**, has no backend, and decodes contract events through

@@ -213,6 +213,42 @@ There is a fifth, narrower one: the SaucerSwap route path is **reversed** (it st
 `<< 80`. `<< 80` encodes a zero fee, matches no pool, and reverts every swap. `_buildPath` has the
 derivation in a comment.
 
+### The 6,144-byte transaction limit
+
+Hedera bounds **every** transaction at `transactionMaxBytes`, which is 6,144 bytes, and the
+initcode of a `ContractCreateTransaction` travels inline. A contract whose creation code exceeds
+that is rejected with `TRANSACTION_OVERSIZE` before it reaches consensus.
+
+`StreamedVesting` is deliberately larger than that — around 11 KB of creation code — which makes it
+a realistic example of the limit rather than a hypothetical one. `npm run deploy:testnet` detects
+this and fails with the exact byte count instead of letting the network answer:
+
+```
+Initcode is 11579 bytes, over Hedera's 6144-byte limit for an inline
+ContractCreateTransaction.
+```
+
+**If you need to deploy a contract this size, you have three options.** They are listed in
+increasing order of effort, because the obvious one is often not the right one.
+
+1. **Shrink the contract until it fits.** Extracting the swap-settlement path into an external
+   library, or moving rarely used views behind a separate contract, usually does it. Keep the
+   deployment under 6 KB and `npm run deploy:testnet` works with no extra machinery.
+2. **Publish the initcode to the File Service.** `FileCreateTransaction` plus
+   `FileAppendTransaction` for the remaining chunks, then create the contract from the resulting
+   `FileId` with `setBytecodeFileId`. Appends require the file to carry the operator's public key
+   in `setKeys`, and the constructor arguments must be concatenated onto the end of the creation
+   code *inside the file* — a file replaces the whole `initcode` field, so passing them separately
+   fails with `ERROR_DECODING_BYTESTRING`. Note that each chunk is itself a transaction and so is
+   subject to the same byte limit.
+3. **Use a HIP-1086 jumbo transaction.** `EthereumTransaction.setEthereumData` accepts up to 24 KB
+   of creation code in one transaction, with no File Service involved.
+
+Two fee notes that apply to all three. Hedera charges for **storing** contract code, so the fee
+scales with payload size and the SDK's default ceiling of 2 HBAR is not enough for a contract this
+size — the node answers `INSUFFICIENT_TX_FEE` even on a well-funded account. Set
+`setMaxTransactionFee` explicitly; a higher ceiling only costs what is actually consumed.
+
 ## Architecture
 
 ```
